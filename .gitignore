@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.joblib
+data/
+results/
+*.nii
+*.nii.gz
+manifest.csv
+analysis.csv
+reader1_time1.csv
+reader1_time2.csv
+reader2_time1.csv
