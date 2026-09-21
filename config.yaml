@@ -1,0 +1,33 @@
+random_seed: 42
+outcome_column: outcome
+cohort_column: cohort
+id_column: patient_id
+clinical_features: [WBC, Hb, CRP, GLB, VAS, spinal_tenderness]
+metadata_columns: [center, reference_standard]
+feature_selection:
+  icc_threshold: 0.80
+  expected_icc_features: 1548
+  t_test_p: 0.05
+  expected_t_test_features: 1032
+  pearson_threshold: 0.90
+  expected_pearson_features: 20
+  lasso_cv_folds: 10
+  lasso_C_min: 0.0001
+  lasso_C_max: 10000
+  lasso_C_values: 100
+  lasso_scoring: roc_auc
+  expected_features: 14
+models:
+  clinical_threshold: 0.47
+  radiomics_threshold: 0.52
+  combined_threshold: 0.49
+  unified_svm:
+    clinical: {C: 1.0, gamma: scale, threshold: 0.46}
+    radiomics: {C: 10.0, gamma: 0.01, threshold: 0.52}
+    combined: {C: 10.0, gamma: 0.01, threshold: 0.49}
+validation:
+  bootstrap_iterations: 1000
+  nested_cv_outer_folds: 5
+  nested_cv_inner_folds: 5
+  nested_cv_repeats: 5
+  strict_reference_values: [culture, targeted_molecular, mngs]
