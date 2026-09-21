@@ -136,6 +136,7 @@ def select_radiomics(x: pd.DataFrame, y: pd.Series, cfg: dict):
 def clinical_model(seed):
     return Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
+        ("scale", StandardScaler()),
         ("mlp", MLPClassifier(hidden_layer_sizes=(16, 8), activation="relu",
                               solver="adam", alpha=0.001,
                               learning_rate_init=0.001, batch_size=16,
@@ -156,10 +157,11 @@ def svm_model(seed):
 
 
 def combined_model(seed, clinical_columns, radiomics_columns):
-    """Impute clinical inputs and standardise radiomics using training data."""
+    """Standardise clinical and radiomics inputs using training data."""
     preprocessing = ColumnTransformer([
         ("clinical", Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
+            ("scale", StandardScaler()),
         ]), clinical_columns),
         ("radiomics", Pipeline([
             ("imputer", SimpleImputer(strategy="median")),

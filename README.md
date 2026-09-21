@@ -16,9 +16,8 @@ The implementation fixes the following study decisions:
 
 - outcome: TBS = 1 and TMS = 0;
 - cohorts: training, internal validation, and external validation;
-- radiomics Z-score standardisation fitted on training data only; clinical
-  variables are not Z-score standardised. Within resampling and
-  cross-validation, imputation and applicable radiomics scaling are refitted
+- clinical and radiomics Z-score standardisation fitted on training data only;
+  within resampling and cross-validation, imputation and scaling are refitted
   using only the corresponding training sample or training fold;
 - 1,834 extracted features comprising 360 first-order, 14 shape, and 1,460
   texture features; the extractor validates these counts for every case;
