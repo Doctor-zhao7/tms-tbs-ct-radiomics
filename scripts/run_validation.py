@@ -48,7 +48,7 @@ class FoldRadiomicsSelector(BaseEstimator, TransformerMixin):
             p_values[column] = p_value
         stage1 = [column for column in columns
                   if np.isfinite(p_values[column]) and
-                  p_values[column] <= self.selection_config["t_test_p"]]
+                  p_values[column] < self.selection_config["t_test_p"]]
         if not stage1:
             finite = {key: value for key, value in p_values.items()
                       if np.isfinite(value)}
@@ -90,7 +90,7 @@ class FoldRadiomicsSelector(BaseEstimator, TransformerMixin):
 
 
 class FoldCombinedTransformer(BaseEstimator, TransformerMixin):
-    """Standardise clinical data and select radiomics entirely within-fold."""
+    """Impute clinical data and select/scale radiomics entirely within-fold."""
 
     def __init__(self, clinical_columns, radiomics_columns,
                  selection_config, seed=42):
@@ -101,17 +101,15 @@ class FoldCombinedTransformer(BaseEstimator, TransformerMixin):
 
     def fit(self, x, y):
         self.clinical_imputer_ = SimpleImputer(strategy="median")
-        clinical = self.clinical_imputer_.fit_transform(
-            x[list(self.clinical_columns)])
-        self.clinical_scaler_ = StandardScaler().fit(clinical)
+        self.clinical_imputer_.fit(x[list(self.clinical_columns)])
         self.radiomics_selector_ = FoldRadiomicsSelector(
             self.radiomics_columns, self.selection_config, self.seed)
         self.radiomics_selector_.fit(x, y)
         return self
 
     def transform(self, x):
-        clinical = self.clinical_scaler_.transform(
-            self.clinical_imputer_.transform(x[list(self.clinical_columns)]))
+        clinical = self.clinical_imputer_.transform(
+            x[list(self.clinical_columns)])
         radiomics = self.radiomics_selector_.transform(x)
         return np.column_stack([clinical, radiomics])
 
@@ -124,7 +122,6 @@ def make_nested_candidate(name, seed, input_name, clinical, radiomics, fs):
     else:
         preprocessing = Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
-            ("scale", StandardScaler()),
         ])
     if name == "lr":
         estimator = LogisticRegression(max_iter=10000, random_state=seed)
@@ -179,7 +176,6 @@ def fixed_svm(input_name, seed, clinical, radiomics, parameters):
     if input_name == "clinical":
         preprocessing = Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
-            ("scale", StandardScaler()),
         ])
     elif input_name == "radiomics":
         preprocessing = Pipeline([
@@ -190,7 +186,6 @@ def fixed_svm(input_name, seed, clinical, radiomics, parameters):
         preprocessing = ColumnTransformer([
             ("clinical", Pipeline([
                 ("imputer", SimpleImputer(strategy="median")),
-                ("scale", StandardScaler()),
             ]), clinical),
             ("radiomics", Pipeline([
                 ("imputer", SimpleImputer(strategy="median")),

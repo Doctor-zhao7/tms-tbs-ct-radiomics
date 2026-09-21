@@ -30,4 +30,4 @@ validation:
   nested_cv_outer_folds: 5
   nested_cv_inner_folds: 5
   nested_cv_repeats: 5
-  strict_reference_values: [culture, targeted_molecular, mngs]
+  strict_reference_values: [culture, targeted_molecular]

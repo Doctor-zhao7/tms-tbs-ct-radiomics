@@ -75,7 +75,7 @@ def t_test_select(x: pd.DataFrame, y: pd.Series, p_cutoff: float):
     for col in x.columns:
         _, p = ttest_ind(x.loc[y == 0, col], x.loc[y == 1, col],
                          equal_var=False, nan_policy="omit")
-        if np.isfinite(p) and p <= p_cutoff:
+        if np.isfinite(p) and p < p_cutoff:
             selected.append(col)
     return selected
 
@@ -136,7 +136,6 @@ def select_radiomics(x: pd.DataFrame, y: pd.Series, cfg: dict):
 def clinical_model(seed):
     return Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
-        ("scale", StandardScaler()),
         ("mlp", MLPClassifier(hidden_layer_sizes=(16, 8), activation="relu",
                               solver="adam", alpha=0.001,
                               learning_rate_init=0.001, batch_size=16,
@@ -157,11 +156,10 @@ def svm_model(seed):
 
 
 def combined_model(seed, clinical_columns, radiomics_columns):
-    """Standardise clinical and radiomics inputs in separate fitted branches."""
+    """Impute clinical inputs and standardise radiomics using training data."""
     preprocessing = ColumnTransformer([
         ("clinical", Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
-            ("scale", StandardScaler()),
         ]), clinical_columns),
         ("radiomics", Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
