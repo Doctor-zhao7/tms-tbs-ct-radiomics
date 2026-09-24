@@ -77,9 +77,7 @@ After full-data selection, `s10_feature_name_audit.csv` compares each reported
 Table S10 name with the actually selected PyRadiomics identifier. It replaces
 punctuation with underscores solely for comparison; models retain the raw
 feature columns. A mismatch remains visible and is never replaced with a
-reported feature by force. The configured hyperparameter search grid is the
-public implementation; without the original run logs it cannot establish the
-historical search grid or reproduce the reported nested-CV AUCs.
+reported feature by force. 
 
 ## Upstream basis
 
