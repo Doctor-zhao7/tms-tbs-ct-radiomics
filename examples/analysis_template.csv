@@ -1,1 +1,1 @@
-patient_id,cohort,outcome,center,reference_standard,WBC,Hb,CRP,GLB,VAS,spinal_tenderness,radiomics_feature_001
+patient_id,cohort,outcome,center,reference_standard,culture_positive,targeted_molecular_positive,mngs_positive,WBC,Hb,CRP,GLB,VAS,spinal_tenderness,radiomics_feature_001

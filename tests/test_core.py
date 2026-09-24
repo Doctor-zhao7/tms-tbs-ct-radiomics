@@ -11,7 +11,8 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from calculate_icc import icc
 from run_analysis import (clinical_model, combined_model, delong_auc_ci,
-                          delong_pairwise)
+                          delong_pairwise, strict_reference_mask,
+                          audit_s10_names)
 from run_validation import make_nested_candidate
 
 
@@ -66,7 +67,8 @@ class CoreStatisticsTests(unittest.TestCase):
         self.assertEqual(config["validation"]["nested_cv_repeats"], 5)
         self.assertEqual(config["feature_selection"]["lasso_cv_folds"], 10)
         self.assertEqual(config["validation"]["strict_reference_values"],
-                         ["culture", "targeted_molecular"])
+                         ["culture", "targeted_molecular", "mngs"])
+
         self.assertEqual(
             [config["models"][key] for key in
              ["clinical_threshold", "radiomics_threshold", "combined_threshold"]],
@@ -92,6 +94,32 @@ class CoreStatisticsTests(unittest.TestCase):
         self.assertEqual(mlp_grid["model__learning_rate_init"],
                          [0.0005, 0.001, 0.005])
         self.assertEqual(mlp_grid["model__batch_size"], [16, 32])
+
+    def test_strict_reference_includes_mngs_only_and_excludes_pathology_only(self):
+        evidence = pd.DataFrame({
+            "culture_positive": [0, 0, 1, 0],
+            "targeted_molecular_positive": [0, 0, 0, 0],
+            "mngs_positive": [1, 0, 0, 0],
+            "reference_standard": ["mNGS only", "pathology only",
+                                   "culture + pathology", "mNGS negative"],
+        })
+        self.assertEqual(strict_reference_mask(evidence).tolist(),
+                         [True, False, True, False])
+
+    def test_strict_reference_rejects_unknown_evidence(self):
+        evidence = pd.DataFrame({"culture_positive": [0],
+                                 "targeted_molecular_positive": [0],
+                                 "mngs_positive": [None]})
+        with self.assertRaisesRegex(ValueError, "unknown is not a negative"):
+            strict_reference_mask(evidence)
+
+    def test_s10_name_audit_does_not_replace_selected_columns(self):
+        comparison = audit_s10_names(
+            ["lbp-3D-k_firstorder_Skewness", "wavelet-LHH_glcm_MaximumProbability"],
+            ["lbp_3D_k_firstorder_Skewness", "another_feature"])
+        self.assertEqual(comparison["matched"].tolist(), [True, False, False])
+        self.assertEqual(comparison.iloc[0]["selected_raw_feature"],
+                         "lbp-3D-k_firstorder_Skewness")
 
 
 if __name__ == "__main__":

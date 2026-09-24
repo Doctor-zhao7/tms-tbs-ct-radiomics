@@ -270,6 +270,7 @@ def main() -> None:
         n_splits=cfg["validation"]["nested_cv_inner_folds"],
         shuffle=True, random_state=seed)
     nested_rows = []
+    fold_rows = []
     for input_name, columns in [
             ("clinical", clinical),
             ("radiomics", all_radiomics),
@@ -277,7 +278,7 @@ def main() -> None:
         x = train[columns]
         for algorithm in ["lr", "svm", "mlp"]:
             fold_scores = []
-            for train_index, test_index in outer.split(x, y):
+            for fold_number, (train_index, test_index) in enumerate(outer.split(x, y), 1):
                 estimator, grid = make_nested_candidate(
                     algorithm, seed, input_name, clinical, all_radiomics,
                     cfg["feature_selection"])
@@ -285,16 +286,32 @@ def main() -> None:
                                       cv=inner, n_jobs=args.n_jobs, refit=True)
                 search.fit(x.iloc[train_index], y.iloc[train_index])
                 score = search.predict_proba(x.iloc[test_index])[:, 1]
-                fold_scores.append(roc_auc_score(y.iloc[test_index], score))
+                fold_auc = roc_auc_score(y.iloc[test_index], score)
+                fold_scores.append(fold_auc)
+                fitted_preprocessor = search.best_estimator_.named_steps["preprocessing"]
+                if input_name == "radiomics":
+                    selected_in_fold = fitted_preprocessor.selected_features_
+                elif input_name == "combined":
+                    selected_in_fold = fitted_preprocessor.radiomics_selector_.selected_features_
+                else:
+                    selected_in_fold = []
+                fold_rows.append({"input_set": input_name, "algorithm": algorithm,
+                                  "outer_evaluation": fold_number, "outer_auc": fold_auc,
+                                  "clinical_inputs": ";".join(clinical) if input_name != "radiomics" else "",
+                                  "radiomics_candidate_count": len(all_radiomics) if input_name != "clinical" else 0,
+                                  "radiomics_selected": ";".join(selected_in_fold),
+                                  "inner_best_params": str(search.best_params_)})
             nested_rows.append({
                 "input_set": input_name, "algorithm": algorithm,
                 "mean_auc": float(np.mean(fold_scores)),
                 "sd_auc": float(np.std(fold_scores, ddof=1)),
                 "outer_evaluations": len(fold_scores),
-                "feature_selection_scope": "refitted within every fold",
+                "feature_selection_scope": "radiomics reselected within folds; six clinical inputs fixed",
             })
     pd.DataFrame(nested_rows).to_csv(
         args.output / "repeated_nested_cv.csv", index=False)
+    pd.DataFrame(fold_rows).to_csv(
+        args.output / "repeated_nested_cv_folds.csv", index=False)
 
     unified_rows = []
     svm_parameters = cfg["models"]["unified_svm"]

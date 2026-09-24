@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import joblib
@@ -68,6 +69,41 @@ def youden_threshold(y, score):
     fpr, tpr, thresholds = roc_curve(y, score)
     valid = np.isfinite(thresholds)
     return float(thresholds[valid][np.argmax((tpr - fpr)[valid])])
+
+
+def strict_reference_mask(frame):
+    """Accept independently recorded positive culture, targeted PCR, or mNGS."""
+    evidence = ["culture_positive", "targeted_molecular_positive", "mngs_positive"]
+    missing = [column for column in evidence if column not in frame.columns]
+    if missing:
+        raise ValueError("Strict-reference analysis requires explicit evidence columns: "
+                         + ", ".join(missing))
+    parsed = []
+    for column in evidence:
+        values = frame[column].astype(str).str.strip().str.lower()
+        if not values.isin({"true", "false", "1", "0"}).all():
+            raise ValueError("Evidence column {} must contain only true/false or 1/0; "
+                             "unknown is not a negative result".format(column))
+        parsed.append(values.isin({"true", "1"}))
+    return parsed[0] | parsed[1] | parsed[2]
+
+
+def manuscript_feature_name(raw_name):
+    """Render a PyRadiomics identifier in the notation used by Table S10."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", str(raw_name)).strip("_")
+
+
+def audit_s10_names(selected, expected):
+    """Compare selected raw identifiers without changing model inputs."""
+    normalized = [manuscript_feature_name(name) for name in selected]
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("Distinct radiomics columns collapse to the same S10 name")
+    mapping = dict(zip(normalized, selected))
+    rows = [{"s10_feature": name, "selected_raw_feature": mapping.get(name, ""),
+             "matched": name in mapping} for name in expected]
+    rows.extend({"s10_feature": "", "selected_raw_feature": mapping[name],
+                 "matched": False} for name in normalized if name not in expected)
+    return pd.DataFrame(rows)
 
 
 def t_test_select(x: pd.DataFrame, y: pd.Series, p_cutoff: float):
@@ -267,26 +303,40 @@ def main():
     audit = {"icc": len(radiomics), **audit}
     (args.output / "selected_radiomics_features.txt").write_text(
         "\n".join(selected) + "\n", encoding="utf-8")
+    expected_names = cfg.get("reported_s10_features", [])
+    if expected_names:
+        comparison = audit_s10_names(selected, expected_names)
+        comparison.to_csv(args.output / "s10_feature_name_audit.csv", index=False)
+        audit["s10_names_match"] = bool(comparison["matched"].all())
     (args.output / "selection_audit.json").write_text(json.dumps(audit, indent=2))
 
     models = {"clinical": (clinical_model(cfg["random_seed"]), clinical),
               "radiomics": (svm_model(cfg["random_seed"]), selected),
               "combined": (combined_model(cfg["random_seed"], clinical, selected),
                            clinical + selected)}
-    thresholds, all_predictions, rows = {}, [] , []
+    thresholds, threshold_audit, all_predictions, rows = {}, [], [], []
     for name, (model, cols) in models.items():
         model.fit(train[cols], train[outcome])
         train_score = model.predict_proba(train[cols])[:, 1]
         configured = cfg["models"].get(f"{name}_threshold")
-        thresholds[name] = float(configured) if configured is not None else youden_threshold(train[outcome], train_score)
+        calculated = youden_threshold(train[outcome], train_score)
+        thresholds[name] = float(configured) if configured is not None else calculated
+        threshold_audit.append({"model": name, "training_youden_threshold": calculated,
+                                "applied_threshold": thresholds[name],
+                                "source": "locked_config" if configured is not None else "training_youden",
+                                "difference": thresholds[name] - calculated})
         joblib.dump({"model": model, "columns": cols, "threshold": thresholds[name]},
                     args.output / f"{name}_model.joblib")
+
+    pd.DataFrame(threshold_audit).to_csv(args.output / "threshold_audit.csv", index=False)
 
     for cohort_name in ["training", "internal", "external"]:
         part = df[df[cohort] == cohort_name].copy()
         keep_columns = [cfg["id_column"], outcome]
-        if "reference_standard" in part.columns:
-            keep_columns.append("reference_standard")
+        keep_columns += [column for column in
+                         ("reference_standard", "culture_positive",
+                          "targeted_molecular_positive", "mngs_positive")
+                         if column in part.columns]
         pred = part[keep_columns].rename(columns={outcome: "outcome"})
         pred["cohort"] = cohort_name
         for name, (model, cols) in models.items():
@@ -311,21 +361,18 @@ def main():
                              "auc_2": auc2, "p_value": p_value})
     pd.DataFrame(pairwise).to_csv(args.output / "delong_pairwise.csv", index=False)
 
-    reference_column = "reference_standard"
-    if reference_column in df.columns:
-        accepted = [value.lower() for value in
-                    cfg["validation"]["strict_reference_values"]]
-        reference_text = (predictions[reference_column].astype(str).str.lower()
-                          .str.replace("-", "_", regex=False)
-                          .str.replace(" ", "_", regex=False))
-        eligible_reference = pd.Series(False, index=predictions.index)
-        for value in accepted:
-            eligible_reference |= reference_text.str.contains(value, regex=False)
+    evidence = ("culture_positive", "targeted_molecular_positive", "mngs_positive")
+    if any(column in df.columns for column in evidence):
+        eligible_reference = strict_reference_mask(predictions)
         strict_rows = []
+        cohort_counts = []
         for cohort_name in ["training", "internal", "external"]:
             mask = ((predictions.cohort == cohort_name) &
                     eligible_reference)
             part = predictions[mask]
+            cohort_counts.append({"cohort": cohort_name,
+                                  "included": int(mask.sum()),
+                                  "excluded": int((predictions.cohort == cohort_name).sum() - mask.sum())})
             if part.empty or part.outcome.nunique() < 2:
                 continue
             for name in ["clinical", "radiomics", "combined"]:
@@ -333,6 +380,12 @@ def main():
                                                part[name], thresholds[name]))
         pd.DataFrame(strict_rows).to_csv(
             args.output / "strict_reference_performance.csv", index=False)
+        pd.DataFrame(cohort_counts).to_csv(
+            args.output / "strict_reference_counts.csv", index=False)
+    else:
+        raise ValueError("Strict-reference analysis requires culture_positive, "
+                         "targeted_molecular_positive and mngs_positive; "
+                         "free-text reference_standard cannot establish positivity")
     save_plots(predictions, args.output)
 
 

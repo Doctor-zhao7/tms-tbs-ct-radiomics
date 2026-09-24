@@ -3,7 +3,22 @@ outcome_column: outcome
 cohort_column: cohort
 id_column: patient_id
 clinical_features: [WBC, Hb, CRP, GLB, VAS, spinal_tenderness]
-metadata_columns: [center, reference_standard]
+metadata_columns: [center, reference_standard, culture_positive, targeted_molecular_positive, mngs_positive]
+reported_s10_features:
+  - exponential_glrlm_ShortRunLowGrayLevelEmphasis
+  - lbp_3D_m1_gldm_SmallDependenceLowGrayLevelEmphasis
+  - exponential_gldm_DependenceNonUniformityNormalized
+  - wavelet_LHH_glcm_MaximumProbability
+  - log_sigma_3_0_mm_3D_glcm_Correlation
+  - lbp_3D_k_firstorder_Skewness
+  - lbp_3D_k_glszm_SmallAreaEmphasis
+  - exponential_ngtdm_Busyness
+  - lbp_3D_k_firstorder_Variance
+  - exponential_ngtdm_Contrast
+  - squareroot_glszm_SizeZoneNonUniformityNormalized
+  - lbp_3D_m2_glszm_SizeZoneNonUniformityNormalized
+  - lbp_3D_k_glcm_Imc2
+  - square_glrlm_ShortRunHighGrayLevelEmphasis
 feature_selection:
   icc_threshold: 0.80
   expected_icc_features: 1548
@@ -30,4 +45,4 @@ validation:
   nested_cv_outer_folds: 5
   nested_cv_inner_folds: 5
   nested_cv_repeats: 5
-  strict_reference_values: [culture, targeted_molecular]
+  strict_reference_values: [culture, targeted_molecular, mngs]
