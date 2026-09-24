@@ -44,9 +44,15 @@ start each outer evaluation from the ICC-qualified candidate pool, not the
 14 features of the final fitted model. Imputation, scaling, t-test filtering,
 correlation filtering, and LASSO selection are fitted within training folds.
 Each candidate classifier is tuned by inner cross-validation and evaluated on
-the held-out outer fold. Classifier families are compared using their mean
-outer-fold AUC; the fold-level file records selected radiomics features and
-best tuning parameters. The bootstrap analysis has a narrower scope: it uses
+the held-out outer fold. For each outer fold, the classifier with the highest
+inner-fold AUC is selected without using outer-fold outcomes; its outer-fold
+AUC is reported in `nested_cv_selected_folds.csv` and summarized in
+`nested_cv_selected_summary.csv`. For the Table S15 family comparison,
+`repeated_nested_cv.csv` separately reports each family's mean outer-fold AUC;
+these family comparison AUCs do not constitute an independent estimate of the
+performance of the family chosen using those same outer folds. The fold-level
+file records selected radiomics features and tuning parameters. The bootstrap
+analysis has a narrower scope: it uses
 class-stratified resampling and refits the models while holding the final
 14-feature set and model settings fixed. It therefore does not represent a
 repeat of the complete model-development procedure.
@@ -176,8 +182,8 @@ TMS_TBS_reproducible_code/
 The analysis command creates selected-feature lists, fitted model files,
 patient-level predicted probabilities, performance tables, paired DeLong
 comparisons, threshold audit, and ROC, calibration, and decision-curve figures. The validation
-command creates bootstrap-optimism, repeated nested-cross-validation summaries
-and fold records, and
+command creates bootstrap-optimism, separate family-comparison and inner-selected
+nested-cross-validation summaries and fold records, and
 unified-SVM sensitivity outputs. Never commit patient data, images, direct
 identifiers, or local absolute paths.
 

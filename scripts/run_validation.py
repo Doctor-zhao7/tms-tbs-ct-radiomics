@@ -149,6 +149,11 @@ def make_nested_candidate(name, seed, input_name, clinical, radiomics, fs):
                      ("model", estimator)]), grid
 
 
+def select_inner_winner(results):
+    """Choose by inner-fold AUC only; ties follow lr, svm, mlp order."""
+    return max(results, key=lambda name: results[name]["inner_auc"])
+
+
 def bootstrap_optimism(x, y, factory, iterations, seed):
     """Estimate optimism by class-stratified resampling of a fixed model."""
     rng = np.random.RandomState(seed)
@@ -271,14 +276,16 @@ def main() -> None:
         shuffle=True, random_state=seed)
     nested_rows = []
     fold_rows = []
+    selected_rows = []
     for input_name, columns in [
             ("clinical", clinical),
             ("radiomics", all_radiomics),
             ("combined", clinical + all_radiomics)]:
         x = train[columns]
-        for algorithm in ["lr", "svm", "mlp"]:
-            fold_scores = []
-            for fold_number, (train_index, test_index) in enumerate(outer.split(x, y), 1):
+        scores_by_algorithm = {name: [] for name in ["lr", "svm", "mlp"]}
+        for fold_number, (train_index, test_index) in enumerate(outer.split(x, y), 1):
+            candidates = {}
+            for algorithm in ["lr", "svm", "mlp"]:
                 estimator, grid = make_nested_candidate(
                     algorithm, seed, input_name, clinical, all_radiomics,
                     cfg["feature_selection"])
@@ -287,7 +294,7 @@ def main() -> None:
                 search.fit(x.iloc[train_index], y.iloc[train_index])
                 score = search.predict_proba(x.iloc[test_index])[:, 1]
                 fold_auc = roc_auc_score(y.iloc[test_index], score)
-                fold_scores.append(fold_auc)
+                scores_by_algorithm[algorithm].append(fold_auc)
                 fitted_preprocessor = search.best_estimator_.named_steps["preprocessing"]
                 if input_name == "radiomics":
                     selected_in_fold = fitted_preprocessor.selected_features_
@@ -297,10 +304,27 @@ def main() -> None:
                     selected_in_fold = []
                 fold_rows.append({"input_set": input_name, "algorithm": algorithm,
                                   "outer_evaluation": fold_number, "outer_auc": fold_auc,
+                                  "inner_best_auc": float(search.best_score_),
                                   "clinical_inputs": ";".join(clinical) if input_name != "radiomics" else "",
                                   "radiomics_candidate_count": len(all_radiomics) if input_name != "clinical" else 0,
                                   "radiomics_selected": ";".join(selected_in_fold),
                                   "inner_best_params": str(search.best_params_)})
+                candidates[algorithm] = {"inner_auc": float(search.best_score_),
+                                         "outer_auc": float(fold_auc),
+                                         "params": search.best_params_,
+                                         "radiomics_selected": selected_in_fold}
+            winner = select_inner_winner(candidates)
+            chosen = candidates[winner]
+            selected_rows.append({
+                "input_set": input_name, "outer_evaluation": fold_number,
+                "selected_algorithm": winner,
+                "selected_inner_auc": chosen["inner_auc"],
+                "selected_outer_auc": chosen["outer_auc"],
+                "selected_parameters": str(chosen["params"]),
+                "selected_radiomics": ";".join(chosen["radiomics_selected"]),
+                "clinical_inputs": ";".join(clinical) if input_name != "radiomics" else "",
+            })
+        for algorithm, fold_scores in scores_by_algorithm.items():
             nested_rows.append({
                 "input_set": input_name, "algorithm": algorithm,
                 "mean_auc": float(np.mean(fold_scores)),
@@ -312,6 +336,13 @@ def main() -> None:
         args.output / "repeated_nested_cv.csv", index=False)
     pd.DataFrame(fold_rows).to_csv(
         args.output / "repeated_nested_cv_folds.csv", index=False)
+    selected_frame = pd.DataFrame(selected_rows)
+    selected_frame.to_csv(args.output / "nested_cv_selected_folds.csv", index=False)
+    selected_frame.groupby("input_set", sort=False).agg(
+        mean_selected_outer_auc=("selected_outer_auc", "mean"),
+        sd_selected_outer_auc=("selected_outer_auc", "std"),
+        outer_evaluations=("selected_outer_auc", "size"),
+    ).reset_index().to_csv(args.output / "nested_cv_selected_summary.csv", index=False)
 
     unified_rows = []
     svm_parameters = cfg["models"]["unified_svm"]

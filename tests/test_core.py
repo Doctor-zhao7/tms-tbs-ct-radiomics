@@ -13,7 +13,7 @@ from calculate_icc import icc
 from run_analysis import (clinical_model, combined_model, delong_auc_ci,
                           delong_pairwise, strict_reference_mask,
                           audit_s10_names)
-from run_validation import make_nested_candidate
+from run_validation import make_nested_candidate, select_inner_winner
 
 
 class CoreStatisticsTests(unittest.TestCase):
@@ -120,6 +120,12 @@ class CoreStatisticsTests(unittest.TestCase):
         self.assertEqual(comparison["matched"].tolist(), [True, False, False])
         self.assertEqual(comparison.iloc[0]["selected_raw_feature"],
                          "lbp-3D-k_firstorder_Skewness")
+
+    def test_nested_family_choice_uses_inner_auc(self):
+        candidates = {"lr": {"inner_auc": 0.91, "outer_auc": 0.68},
+                      "svm": {"inner_auc": 0.88, "outer_auc": 0.95},
+                      "mlp": {"inner_auc": 0.85, "outer_auc": 0.80}}
+        self.assertEqual(select_inner_winner(candidates), "lr")
 
 
 if __name__ == "__main__":
